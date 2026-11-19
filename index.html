@@ -2699,16 +2699,29 @@ function getRequiredCriteriaCount(rubric = currentRubric) {
         createAndDownloadPDF(evaluation);
     }
 
-    function deleteEvaluation(evaluationId) {
+    async function deleteEvaluation(evaluationId) {
         if (!confirm('Tem certeza que deseja deletar esta avaliação?')) return;
-        
-        let history = JSON.parse(localStorage.getItem('sesi_evaluations') || '[]');
-        history = history.filter(item => item.id !== evaluationId);
-        localStorage.setItem('sesi_evaluations', JSON.stringify(history));
-        
-        loadHistory();
-        loadDashboard();
-        alert('Avaliação deletada com sucesso!');
+
+        // A exclusão precisa ser registrada na nuvem antes de remover a cópia local.
+        // Isso impede que a sincronização restaure a avaliação em outro aparelho.
+        if (typeof window.deleteCloudEvaluation !== 'function') {
+            alert('A sincronização ainda está carregando. Atualize a página e tente novamente.');
+            return;
+        }
+
+        try {
+            await window.deleteCloudEvaluation(evaluationId);
+            let history = JSON.parse(localStorage.getItem('sesi_evaluations') || '[]');
+            history = history.filter(item => String(item.id) !== String(evaluationId));
+            localStorage.setItem('sesi_evaluations', JSON.stringify(history));
+
+            loadHistory();
+            loadDashboard();
+            alert('Avaliação excluída de todos os dispositivos com sucesso!');
+        } catch (error) {
+            console.error('Erro ao excluir avaliação na nuvem:', error);
+            alert('Não foi possível excluir a avaliação da nuvem. Ela foi mantida para evitar perda de dados. Erro: ' + error.message);
+        }
     }
 
     function generatePDF() {
