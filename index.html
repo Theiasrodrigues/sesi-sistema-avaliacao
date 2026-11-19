@@ -1717,6 +1717,7 @@ table tbody tr:hover {
 </div>
         <div class="header-title">
             <h1>SESI — Sistema de Avaliação</h1>
+            <small id="sesiSyncStatus" role="status" aria-live="polite" style="display:block;margin-top:6px;font-size:12px;font-weight:600;color:#666;">Conectando à nuvem...</small>
         <div class="discipline-current">
             <span id="disciplineCurrentBadge">Disciplina: —</span>
             <button type="button" class="change-discipline-btn" onclick="changeDiscipline()">Trocar disciplina</button>
@@ -3244,6 +3245,6 @@ document.addEventListener('DOMContentLoaded', function () {
     if (school) school.value = 'SESI Milton Sobrosa Cordeiro';
 });
 </script>
-<script src="supabase-sync.js"></script>
+<script src="supabase-sync.js?v=1714ead"></script>
 </body>
 </html>
