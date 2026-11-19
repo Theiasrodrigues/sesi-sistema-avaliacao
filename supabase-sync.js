@@ -183,11 +183,14 @@
     syncInProgress = true;
     setSyncStatus('Sincronizando avaliações...', 'busy');
     try {
-      // Primeiro envia tudo o que existe apenas neste navegador, sem apagar registros locais.
+      // Envia somente registros que ainda não existem na nuvem.
+      // Assim, uma cópia local antiga nunca sobrescreve uma avaliação mais recente de outro computador.
+      const cloudRows = await supabaseRequest('avaliacoes?select=id&limit=1000');
+      const cloudIds = new Set((cloudRows || []).map(row => String(row.id)));
       const localHistory = readLocalHistory();
       for (const evaluation of localHistory) {
         if (!evaluation || !evaluation.id || !evaluation.student || !evaluation.class) continue;
-        await syncEvaluation(evaluation);
+        if (!cloudIds.has(String(evaluation.id))) await syncEvaluation(evaluation);
       }
 
       const result = await pullAndMergeCloudHistory();
