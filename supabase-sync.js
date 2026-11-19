@@ -117,6 +117,11 @@
     return new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2])).toLocaleDateString('pt-BR');
   }
 
+  async function fetchDeletedEvaluationIds() {
+    const rows = await supabaseRequest('avaliacoes_excluidas?select=id&limit=5000');
+    return new Set((rows || []).map(row => String(row.id)));
+  }
+
   async function fetchCloudHistory() {
     const rows = await supabaseRequest(
       'avaliacoes?select=id,aluno_id,disciplina,rubric_type,avaliador,atividade,escola,data_avaliacao,scores,nota,comentarios,score_scale_version&order=data_avaliacao.desc&limit=1000'
@@ -158,8 +163,9 @@
   }
 
   async function pullAndMergeCloudHistory() {
-    const cloudHistory = await fetchCloudHistory();
-    const localHistory = readLocalHistory();
+    const deletedIds = await fetchDeletedEvaluationIds();
+    const cloudHistory = (await fetchCloudHistory()).filter(item => !deletedIds.has(String(item.id)));
+    const localHistory = readLocalHistory().filter(item => !deletedIds.has(String(item.id)));
     const localById = new Map(localHistory.map(item => [String(item.id), item]));
     const merged = new Map(localHistory.map(item => [String(item.id), item]));
 
@@ -183,13 +189,19 @@
     syncInProgress = true;
     setSyncStatus('Sincronizando avaliações...', 'busy');
     try {
+      // Exclusões registradas na nuvem são definitivas e não podem ser recriadas por cópias locais antigas.
+      const deletedIds = await fetchDeletedEvaluationIds();
+      const localBeforeCleanup = readLocalHistory();
+      const cleanedLocal = localBeforeCleanup.filter(item => !deletedIds.has(String(item.id)));
+      if (cleanedLocal.length !== localBeforeCleanup.length) writeLocalHistory(cleanedLocal);
+
       // Envia somente registros que ainda não existem na nuvem.
       // Assim, uma cópia local antiga nunca sobrescreve uma avaliação mais recente de outro computador.
       const cloudRows = await supabaseRequest('avaliacoes?select=id&limit=1000');
       const cloudIds = new Set((cloudRows || []).map(row => String(row.id)));
       const localHistory = readLocalHistory();
       for (const evaluation of localHistory) {
-        if (!evaluation || !evaluation.id || !evaluation.student || !evaluation.class) continue;
+        if (!evaluation || !evaluation.id || deletedIds.has(String(evaluation.id)) || !evaluation.student || !evaluation.class) continue;
         if (!cloudIds.has(String(evaluation.id))) await syncEvaluation(evaluation);
       }
 
@@ -241,6 +253,23 @@
     console.info('[Supabase] Integração de envio e recebimento instalada.');
     return true;
   }
+
+
+  // Registra a exclusão antes de remover a avaliação. Assim, outros dispositivos
+  // também removem a cópia local e não reenviam o registro apagado.
+  window.deleteCloudEvaluation = async function (evaluationId) {
+    const id = Number(evaluationId);
+    if (!Number.isFinite(id)) throw new Error('ID de avaliação inválido.');
+    await supabaseRequest('avaliacoes_excluidas?on_conflict=id', {
+      method: 'POST',
+      headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+      body: JSON.stringify({ id: id })
+    });
+    await supabaseRequest('avaliacoes?id=eq.' + encodeURIComponent(id), {
+      method: 'DELETE',
+      headers: { Prefer: 'return=minimal' }
+    });
+  };
 
   async function start() {
     if (!installSaveIntegration()) {
